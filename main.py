@@ -15,6 +15,25 @@ BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI()
 
+# （PWA用 static 配信。すでに static/ を作っているなら有効）
+# もし static フォルダが無いなら作るか、この2行はコメントアウトでもOKです。
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def normalize_price(price):
+    """
+    price を安全に整数化する。
+    変換できない/欠損は大きな値にして末尾へ回す。
+    """
+    try:
+        if price is None:
+            return 10**12
+        if isinstance(price, str):
+            price = price.replace(",", "").replace("円", "").strip()
+        return int(price)
+    except Exception:
+        return 10**12
+
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -44,11 +63,11 @@ def search_rakuten(keyword: str, hits: int = 10):
             {
                 "source": "rakuten",
                 "name": i["itemName"],
-                "price": i["itemPrice"],
+                "price": i["itemPrice"],  # 楽天は数値っぽいが念のため normalize_price で扱う
                 "url": i["itemUrl"],
                 "shop": i["shopName"],
                 "image": i["mediumImageUrls"][0]["imageUrl"]
-                if i["mediumImageUrls"]
+                if i.get("mediumImageUrls")
                 else None,
             }
         )
@@ -69,20 +88,20 @@ def search_yahoo(keyword: str, hits: int = 10):
     data = res.json()
 
     items = []
-    # v3 のレスポンスは hits 配列の中に商品が入っている :contentReference[oaicite:1]{index=1}
     for hit in data.get("hits", []):
-        # price は数値（税抜/税込は priceLabel で詳細が取れるが、ここでは price をそのまま使用）:contentReference[oaicite:2]{index=2}
         price = hit.get("price")
         name = hit.get("name")
         url_item = hit.get("url")
+
         image = None
-        if "image" in hit and isinstance(hit["image"], dict):
+        if isinstance(hit.get("image"), dict):
             image = hit["image"].get("medium") or hit["image"].get("small")
+
         seller = None
-        if "seller" in hit and isinstance(hit["seller"], dict):
+        if isinstance(hit.get("seller"), dict):
             seller = hit["seller"].get("name")
 
-        # price が取れないものはスキップ
+        # price が取れないものはスキップ（今まで通り）
         if price is None:
             continue
 
@@ -90,7 +109,7 @@ def search_yahoo(keyword: str, hits: int = 10):
             {
                 "source": "yahoo",
                 "name": name,
-                "price": price,
+                "price": price,  # Yahooは数値だけど念のため normalize_price で扱う
                 "url": url_item,
                 "shop": seller or "Yahoo!ショッピング",
                 "image": image,
@@ -110,29 +129,19 @@ def search_items(keyword: str):
 
     all_items = rakuten_items + yahoo_items
 
-    # 全体から最安値を探して、その価格をマーキング
-    min_price = None
-    for item in all_items:
-        p = item["price"]
-        if isinstance(p, str):
-            try:
-                p = int(p)
-            except ValueError:
-                continue
-        if min_price is None or p < min_price:
-            min_price = p
+    # 価格が変換不能なものは末尾へ回す（ここではスキップせず残す運用）
+    # → 表示上は price を見せつつ、並びは normalize_price で安全に
+    prices = [normalize_price(item.get("price")) for item in all_items]
+    min_price = min(prices) if prices else None
 
+    # 最安フラグ
     for item in all_items:
-        p = item["price"]
-        if isinstance(p, str):
-            try:
-                p = int(p)
-            except ValueError:
-                continue
-        item["is_cheapest"] = (min_price is not None and p == min_price)
+        item["is_cheapest"] = (
+            min_price is not None and normalize_price(item.get("price")) == min_price
+        )
 
-     # ★追加：価格順に並べ替え（最安が先頭）
-    all_items.sort(key=lambda x: int(x["price"]))
+    # ★重要：全体を「安い順」にソート（最安が先頭）
+    all_items.sort(key=lambda x: normalize_price(x.get("price")))
 
     return {
         "keyword": keyword,
