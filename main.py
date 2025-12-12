@@ -14,8 +14,6 @@ YAHOO_APP_ID = os.getenv("YAHOO_APP_ID")
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -132,6 +130,9 @@ def search_items(keyword: str):
             except ValueError:
                 continue
         item["is_cheapest"] = (min_price is not None and p == min_price)
+
+     # ★追加：価格順に並べ替え（最安が先頭）
+    all_items.sort(key=lambda x: int(x["price"]))
 
     return {
         "keyword": keyword,
