@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>楽天 × Yahoo 商品検索デモ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#ffffff">
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 12px;
+    }
+    .search-box {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .search-box input {
+      flex: 1;
+      padding: 8px;
+      font-size: 1rem;
+    }
+    .search-box button {
+      padding: 8px 16px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #status {
+      margin-bottom: 12px;
+      font-size: 0.9rem;
+      color: #555;
+    }
+    .item-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .item-card {
+      background: white;
+      border-radius: 8px;
+      padding: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .item-card img {
+      max-width: 100%;
+      height: 160px;
+      object-fit: contain;
+      margin-bottom: 8px;
+    }
+     .item-name {
+      font-size: 0.95rem;
+      font-weight: bold;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .item-shop {
+      font-size: 0.8rem;
+      color: #555;
+      margin-bottom: 4px;
+    }
+    .item-price {
+      font-size: 1rem;
+      font-weight: bold;
+      color: #d32f2f;
+      margin-bottom: 8px;
+    }
+    .item-link a {
+      font-size: 0.85rem;
+      text-decoration: none;
+      color: #1976d2;
+    }
+    /* 4-1 追加分：モール名＆最安バッジ */
+    .item-source {
+      font-size: 0.75rem;
+      color: #777;
+      margin-bottom: 4px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      background: #ff1744;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>商品検索（楽天 × Yahoo 最安値チェック）</h1>
+    <div class="search-box">
+      <input id="keyword" placeholder="商品名や型番を入力（例：ノートパソコン）" />
+      <button onclick="searchItems()">検索</button>
+    </div>
+    <div id="status"></div>
+    <div id="results" class="item-list"></div>
+  </div>
+
+  <script>
+    async function searchItems() {
+      const kwInput = document.getElementById("keyword");
+      const keyword = kwInput.value.trim();
+      const statusEl = document.getElementById("status");
+      const resultsEl = document.getElementById("results");
+
+      if (!keyword) {
+        alert("キーワードを入力してください。");
+        return;
+      }
+
+      statusEl.textContent = "検索中…";
+      resultsEl.innerHTML = "";
+
+      try {
+        const res = await fetch(`/search?keyword=${encodeURIComponent(keyword)}`);
+        if (!res.ok) {
+          throw new Error("APIエラー: " + res.status);
+        }
+        const data = await res.json();
+
+        statusEl.textContent = `「${keyword}」の検索結果：${data.count}件`;
+
+        if (!data.items || data.items.length === 0) {
+          resultsEl.textContent = "商品が見つかりませんでした。";
+          return;
+        }
+
+        // 4-2 追加・更新分：source と is_cheapest を表示
+        data.items.forEach((item) => {
+          const card = document.createElement("div");
+          card.className = "item-card";
+
+          if (item.image) {
+            const img = document.createElement("img");
+            img.src = item.image;
+            card.appendChild(img);
+          }
+
+          const name = document.createElement("div");
+          name.className = "item-name";
+          name.textContent = item.name;
+
+          // 最安値ならバッジを付ける
+          if (item.is_cheapest) {
+            const badge = document.createElement("span");
+            badge.className = "badge";
+            badge.textContent = "最安";
+            name.appendChild(badge);
+          }
+
+          card.appendChild(name);
+
+          const source = document.createElement("div");
+          source.className = "item-source";
+          const srcLabel =
+            item.source === "rakuten"
+              ? "楽天市場"
+              : item.source === "yahoo"
+              ? "Yahoo!ショッピング"
+              : "その他";
+          source.textContent = srcLabel;
+          card.appendChild(source);
+
+          const shop = document.createElement("div");
+          shop.className = "item-shop";
+          shop.textContent = item.shop;
+          card.appendChild(shop);
+
+          const price = document.createElement("div");
+          price.className = "item-price";
+          const priceNum =
+            typeof item.price === "number"
+              ? item.price
+              : parseInt(item.price || "0", 10);
+          price.textContent = priceNum.toLocaleString() + " 円";
+          card.appendChild(price);
+
+          const linkDiv = document.createElement("div");
+          linkDiv.className = "item-link";
+          const link = document.createElement("a");
+          link.href = item.url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "商品ページを開く";
+          linkDiv.appendChild(link);
+          card.appendChild(linkDiv);
+
+          resultsEl.appendChild(card);
+        });
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "エラーが発生しました。コンソールを確認してください。";
+      }
+    }
+  </script>
+  <script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/static/sw.js");
+  }
+</script>
+
+</body>
+</html>
