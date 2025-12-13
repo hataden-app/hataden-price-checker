@@ -22,6 +22,16 @@ BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI()
 
+@app.get("/debug/env")
+def debug_env():
+    return {
+        "VC_SID_set": bool(VC_SID),
+        "VC_PID_set": bool(VC_PID),
+        "RAKUTEN_APP_ID_set": bool(RAKUTEN_APP_ID),
+        "YAHOO_APP_ID_set": bool(YAHOO_APP_ID),
+    }
+
+
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
