@@ -118,33 +118,44 @@ def search_yahoo(keyword: str, hits: int = 10):
     return items
 
 
+from typing import Optional
+
 @app.get("/search")
-def search_items(keyword: str):
+def search_items(keyword: str, sources: Optional[str] = None):
     """
-    楽天＋Yahooで商品検索して、
-    共通フォーマットで結果を返す。
+    楽天＋Yahooで商品検索して、共通フォーマットで返す。
+    sources で絞り込み可能:
+      - sources=rakuten
+      - sources=yahoo
+      - sources=rakuten,yahoo
+      - sources=rakuten,yahoo,amazon（将来用）
     """
     rakuten_items = search_rakuten(keyword, hits=10)
     yahoo_items = search_yahoo(keyword, hits=10)
 
     all_items = rakuten_items + yahoo_items
 
-    # 価格が変換不能なものは末尾へ回す（ここではスキップせず残す運用）
-    # → 表示上は price を見せつつ、並びは normalize_price で安全に
+    # --- 追加：sources 指定があれば絞り込み ---
+    if sources:
+        allowed = {s.strip().lower() for s in sources.split(",") if s.strip()}
+        all_items = [item for item in all_items if item.get("source") in allowed]
+
+    # --- 最安値（正規化した価格）を計算 ---
     prices = [normalize_price(item.get("price")) for item in all_items]
     min_price = min(prices) if prices else None
 
-    # 最安フラグ
+    # --- 最安フラグ付与 ---
     for item in all_items:
         item["is_cheapest"] = (
             min_price is not None and normalize_price(item.get("price")) == min_price
         )
 
-    # ★重要：全体を「安い順」にソート（最安が先頭）
+    # --- 安い順にソート（全体） ---
     all_items.sort(key=lambda x: normalize_price(x.get("price")))
 
     return {
         "keyword": keyword,
+        "sources": sorted(list({i.get("source") for i in all_items if i.get("source")})),
         "count": len(all_items),
         "items": all_items,
     }
