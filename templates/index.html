@@ -9,8 +9,7 @@
 
   <style>
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-        sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #f5f5f5;
       margin: 0;
       padding: 0;
@@ -24,26 +23,57 @@
       font-size: 1.4rem;
       margin-bottom: 12px;
     }
+
     .search-box {
       display: flex;
       gap: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     .search-box input {
       flex: 1;
-      padding: 8px;
+      padding: 10px;
       font-size: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      outline: none;
     }
     .search-box button {
-      padding: 8px 16px;
+      padding: 10px 16px;
       font-size: 1rem;
       cursor: pointer;
+      border: none;
+      border-radius: 10px;
+      background: #1976d2;
+      color: #fff;
     }
+
+    /* 追加：モール切替ボタン */
+    .source-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      padding: 8px 12px;
+      font-size: 0.95rem;
+      border-radius: 999px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: #111;
+      color: #fff;
+      border-color: #111;
+    }
+
     #status {
       margin-bottom: 12px;
       font-size: 0.9rem;
       color: #555;
     }
+
     .item-list {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -51,8 +81,8 @@
     }
     .item-card {
       background: white;
-      border-radius: 8px;
-      padding: 8px;
+      border-radius: 12px;
+      padding: 10px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       display: flex;
       flex-direction: column;
@@ -63,8 +93,11 @@
       height: 160px;
       object-fit: contain;
       margin-bottom: 8px;
+      background: #fafafa;
+      border-radius: 10px;
     }
-     .item-name {
+
+    .item-name {
       font-size: 0.95rem;
       font-weight: bold;
       margin-bottom: 4px;
@@ -72,6 +105,7 @@
       align-items: center;
       gap: 6px;
       flex-wrap: wrap;
+      line-height: 1.35;
     }
     .item-shop {
       font-size: 0.8rem;
@@ -79,17 +113,18 @@
       margin-bottom: 4px;
     }
     .item-price {
-      font-size: 1rem;
-      font-weight: bold;
+      font-size: 1.05rem;
+      font-weight: 800;
       color: #d32f2f;
       margin-bottom: 8px;
     }
     .item-link a {
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       text-decoration: none;
       color: #1976d2;
     }
-    /* 4-1 追加分：モール名＆最安バッジ */
+
+    /* モール名＆最安バッジ */
     .item-source {
       font-size: 0.75rem;
       color: #777;
@@ -106,23 +141,53 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <h1>商品検索（楽天 × Yahoo 最安値チェック）</h1>
+
     <div class="search-box">
       <input id="keyword" placeholder="商品名や型番を入力（例：ノートパソコン）" />
-      <button onclick="searchItems()">検索</button>
+      <button id="searchBtn" onclick="searchItems()">検索</button>
     </div>
+
+    <!-- 追加：モール切替 -->
+    <div class="source-tabs">
+      <button class="tab-btn active" data-sources="rakuten,yahoo" onclick="setSources(this)">両方</button>
+      <button class="tab-btn" data-sources="rakuten" onclick="setSources(this)">楽天のみ</button>
+      <button class="tab-btn" data-sources="yahoo" onclick="setSources(this)">Yahooのみ</button>
+      <!-- Amazon追加後に有効化したいなら↓（今は未使用でもOK） -->
+      <!-- <button class="tab-btn" data-sources="rakuten,yahoo,amazon" onclick="setSources(this)">3社</button> -->
+    </div>
+
     <div id="status"></div>
     <div id="results" class="item-list"></div>
   </div>
 
   <script>
+    // 選択中の sources（デフォルト：両方）
+    let currentSources = "rakuten,yahoo";
+
+    function setSources(btn) {
+      // ボタンのactive切替
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      currentSources = btn.dataset.sources || "rakuten,yahoo";
+
+      // すでにキーワードが入っていれば再検索
+      const keyword = document.getElementById("keyword").value.trim();
+      if (keyword) {
+        searchItems();
+      }
+    }
+
     async function searchItems() {
       const kwInput = document.getElementById("keyword");
       const keyword = kwInput.value.trim();
       const statusEl = document.getElementById("status");
       const resultsEl = document.getElementById("results");
+      const searchBtn = document.getElementById("searchBtn");
 
       if (!keyword) {
         alert("キーワードを入力してください。");
@@ -131,22 +196,28 @@
 
       statusEl.textContent = "検索中…";
       resultsEl.innerHTML = "";
+      searchBtn.disabled = true;
 
       try {
-        const res = await fetch(`/search?keyword=${encodeURIComponent(keyword)}`);
+        const url = `/search?keyword=${encodeURIComponent(keyword)}&sources=${encodeURIComponent(currentSources)}`;
+        const res = await fetch(url);
         if (!res.ok) {
           throw new Error("APIエラー: " + res.status);
         }
         const data = await res.json();
 
-        statusEl.textContent = `「${keyword}」の検索結果：${data.count}件`;
+        const srcLabel =
+          currentSources === "rakuten" ? "楽天のみ" :
+          currentSources === "yahoo" ? "Yahooのみ" :
+          "両方";
+
+        statusEl.textContent = `「${keyword}」の検索結果：${data.count}件（${srcLabel}）`;
 
         if (!data.items || data.items.length === 0) {
           resultsEl.textContent = "商品が見つかりませんでした。";
           return;
         }
 
-        // 4-2 追加・更新分：source と is_cheapest を表示
         data.items.forEach((item) => {
           const card = document.createElement("div");
           card.className = "item-card";
@@ -154,6 +225,7 @@
           if (item.image) {
             const img = document.createElement("img");
             img.src = item.image;
+            img.loading = "lazy";
             card.appendChild(img);
           }
 
@@ -173,18 +245,17 @@
 
           const source = document.createElement("div");
           source.className = "item-source";
-          const srcLabel =
-            item.source === "rakuten"
-              ? "楽天市場"
-              : item.source === "yahoo"
-              ? "Yahoo!ショッピング"
-              : "その他";
-          source.textContent = srcLabel;
+          const srcText =
+            item.source === "rakuten" ? "楽天市場" :
+            item.source === "yahoo" ? "Yahoo!ショッピング" :
+            item.source === "amazon" ? "Amazon" :
+            "その他";
+          source.textContent = srcText;
           card.appendChild(source);
 
           const shop = document.createElement("div");
           shop.className = "item-shop";
-          shop.textContent = item.shop;
+          shop.textContent = item.shop || "";
           card.appendChild(shop);
 
           const price = document.createElement("div");
@@ -192,14 +263,14 @@
           const priceNum =
             typeof item.price === "number"
               ? item.price
-              : parseInt(item.price || "0", 10);
-          price.textContent = priceNum.toLocaleString() + " 円";
+              : parseInt(String(item.price || "0").replace(/[,円\s]/g, ""), 10);
+          price.textContent = (Number.isFinite(priceNum) ? priceNum : 0).toLocaleString() + " 円";
           card.appendChild(price);
 
           const linkDiv = document.createElement("div");
           linkDiv.className = "item-link";
           const link = document.createElement("a");
-          link.href = item.url;
+          link.href = item.url; // 将来 affiliate_url を使うなら item.affiliate_url に差し替え
           link.target = "_blank";
           link.rel = "noopener noreferrer";
           link.textContent = "商品ページを開く";
@@ -211,14 +282,21 @@
       } catch (err) {
         console.error(err);
         statusEl.textContent = "エラーが発生しました。コンソールを確認してください。";
+      } finally {
+        searchBtn.disabled = false;
       }
     }
-  </script>
-  <script>
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js");
-  }
-</script>
 
+    // Enterキーで検索できるように
+    document.getElementById("keyword").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") searchItems();
+    });
+  </script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/static/sw.js");
+    }
+  </script>
 </body>
 </html>
