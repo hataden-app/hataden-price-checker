@@ -164,28 +164,37 @@ def search_yahoo(keyword: str, hits: int = 10):
 
 
 @app.get("/search")
-def search_items(keyword: str):
-    """楽天＋Yahooで検索して、最安判定＋安い順ソートして返す"""
-    rakuten_items = search_rakuten(keyword, hits=10)
-    yahoo_items = search_yahoo(keyword, hits=10)
+def search_items(keyword: str, sources: str = "rakuten,yahoo"):
+    """
+    sources: "rakuten", "yahoo", "rakuten,yahoo"
+    """
+    source_list = [s.strip() for s in sources.split(",")]
 
-    all_items = rakuten_items + yahoo_items
+    all_items = []
 
-    # 最安値判定（価格を正規化して比較）
+    if "rakuten" in source_list:
+        all_items += search_rakuten(keyword, hits=10)
+
+    if "yahoo" in source_list:
+        all_items += search_yahoo(keyword, hits=10)
+
+    # 最安値判定
     norm_prices = [normalize_price(i.get("price")) for i in all_items]
     min_price = min(norm_prices) if norm_prices else None
 
     for item in all_items:
         item["is_cheapest"] = (
-            min_price is not None and normalize_price(item.get("price")) == min_price
+            min_price is not None
+            and normalize_price(item.get("price")) == min_price
         )
 
-    # 全体を価格昇順にソート
+    # 価格昇順
     all_items.sort(key=lambda x: normalize_price(x.get("price")))
 
     return {
         "keyword": keyword,
-        "sources": sorted(list({i.get("source") for i in all_items if i.get("source")})),
+        "sources": source_list,
         "count": len(all_items),
         "items": all_items,
     }
+
