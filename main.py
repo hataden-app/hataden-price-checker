@@ -162,6 +162,11 @@ def search_yahoo(keyword: str, hits: int = 10):
         )
     return items
 
+@app.get("/about", response_class=HTMLResponse)
+def about():
+    html_path = BASE_DIR / "templates" / "about.html"
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
 
 @app.get("/search")
 def search_items(keyword: str, sources: str = "rakuten,yahoo"):
