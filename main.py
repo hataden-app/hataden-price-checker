@@ -12,7 +12,8 @@ RAKUTEN_APP_ID = os.getenv("RAKUTEN_APP_ID")
 YAHOO_APP_ID = os.getenv("YAHOO_APP_ID")
 
 # 楽天アフィリエイトID（あなたのやつ）
-RAKUTEN_AF_ID = "4f2a38c3.e857b32f.4f2a38c4.35b2678f"
+RAKUTEN_AF_ID = os.getenv("RAKUTEN_AF_ID")  # ← 環境変数から読む
+
 
 # ValueCommerce（Yahoo用：あなたのsid/pid）
 VC_SID = os.getenv("VC_SID")  # 3759503
@@ -63,7 +64,8 @@ def normalize_price(p):
 def make_rakuten_affiliate_url(item_url: str) -> str:
     if not item_url:
         return item_url
-    # 既に ? が付いていたり rafcid が付いていても、全部落として付け直す
+    if not RAKUTEN_AF_ID:
+        return item_url
     base_url = item_url.split("?")[0]
     return f"{base_url}?rafcid={RAKUTEN_AF_ID}"
 
