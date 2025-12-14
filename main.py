@@ -43,7 +43,7 @@ def read_root():
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
 
-# =====================
+# ====================
 # 共通：価格を安全にint化（ソート用）
 # =====================
 def normalize_price(p):
