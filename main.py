@@ -30,6 +30,8 @@ def debug_env():
         "VC_PID_set": bool(VC_PID),
         "RAKUTEN_APP_ID_set": bool(RAKUTEN_APP_ID),
         "YAHOO_APP_ID_set": bool(YAHOO_APP_ID),
+        "RAKUTEN_AF_ID_set": bool(RAKUTEN_AF_ID),  # ★追加
+        "RAKUTEN_AF_ID_head": (RAKUTEN_AF_ID[:8] if RAKUTEN_AF_ID else None),  # ★任意（確認用）
     }
 
 
