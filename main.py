@@ -10,17 +10,12 @@ load_dotenv()
 
 RAKUTEN_APP_ID = os.getenv("RAKUTEN_APP_ID")
 YAHOO_APP_ID = os.getenv("YAHOO_APP_ID")
+RAKUTEN_AF_ID = os.getenv("RAKUTEN_AF_ID")  # 例: 4e77dab6.420a772f.4e77dab7.6b41839e
 
-# 楽天アフィリエイトID（あなたのやつ）
-RAKUTEN_AF_ID = os.getenv("RAKUTEN_AF_ID")  # ← 環境変数から読む
-
-
-# ValueCommerce（Yahoo用：あなたのsid/pid）
-VC_SID = os.getenv("VC_SID")  # 3759503
-VC_PID = os.getenv("VC_PID")  # 892373053
+VC_SID = os.getenv("VC_SID")
+VC_PID = os.getenv("VC_PID")
 
 BASE_DIR = Path(__file__).resolve().parent
-
 app = FastAPI()
 
 @app.get("/debug/env")
@@ -30,50 +25,51 @@ def debug_env():
         "VC_PID_set": bool(VC_PID),
         "RAKUTEN_APP_ID_set": bool(RAKUTEN_APP_ID),
         "YAHOO_APP_ID_set": bool(YAHOO_APP_ID),
-        "RAKUTEN_AF_ID_set": bool(RAKUTEN_AF_ID),  # ★追加
-        "RAKUTEN_AF_ID_head": (RAKUTEN_AF_ID[:8] if RAKUTEN_AF_ID else None),  # ★任意（確認用）
+        "RAKUTEN_AF_ID_set": bool(RAKUTEN_AF_ID),
+        "RAKUTEN_AF_ID_head": (RAKUTEN_AF_ID[:8] if RAKUTEN_AF_ID else None),
     }
-
-
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    """検索画面（index.html）を返す"""
     html_path = BASE_DIR / "templates" / "index.html"
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
+@app.get("/about", response_class=HTMLResponse)
+def about():
+    html_path = BASE_DIR / "templates" / "about.html"
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
-# ====================
-# 共通：価格を安全にint化（ソート用）
-# =====================
 def normalize_price(p):
-    """price が文字列でも数値でも int に正規化（失敗したら大きい値にして最後へ）"""
     try:
         if p is None:
             return 10**18
         if isinstance(p, (int, float)):
             return int(p)
-        s = str(p)
-        s = s.replace(",", "").replace("円", "").strip()
+        s = str(p).replace(",", "").replace("円", "").strip()
         return int(float(s))
     except Exception:
         return 10**18
 
 
 # =====================
-# 楽天：アフィURL生成（rafcid二重防止）
+# ✅ 楽天：成果リンク（affiliateUrl）を優先して使う
 # =====================
-def make_rakuten_affiliate_url(item_url: str) -> str:
-    if not item_url:
+def make_rakuten_affiliate_url_fallback(item_url: str) -> str:
+    """
+    念のためのフォールバック（基本はAPIが返す affiliateUrl を使う）
+    hb.afl の形で作る版。動かなければ affiliateUrl を必ず使う方針でOK。
+    """
+    if not item_url or not RAKUTEN_AF_ID:
         return item_url
-    if not RAKUTEN_AF_ID:
-        return item_url
-    base_url = item_url.split("?")[0]
-    return f"{base_url}?rafcid={RAKUTEN_AF_ID}"
+
+    pc = quote(item_url, safe="")
+    # モバイル(m)はpcと同じでOK（楽天側で適切にリダイレクトされることが多い）
+    m = pc
+
+    return f"https://hb.afl.rakuten.co.jp/hgc/{RAKUTEN_AF_ID}/?pc={pc}&m={m}"
 
 
 def search_rakuten(keyword: str, hits: int = 10):
-    """楽天市場APIで商品検索（アフィ対応）"""
     url = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601"
 
     params = {
@@ -81,21 +77,26 @@ def search_rakuten(keyword: str, hits: int = 10):
         "applicationId": RAKUTEN_APP_ID,
         "keyword": keyword,
         "hits": hits,
+        # ★これが重要：アフィIDを渡すと affiliateUrl が返ってくる
+        "affiliateId": RAKUTEN_AF_ID,
     }
 
-    res = requests.get(url, params=params)
+    res = requests.get(url, params=params, timeout=20)
     data = res.json()
 
     items = []
     for item in data.get("Items", []):
         i = item["Item"]
 
+        # ✅ 正式な成果リンク（これを使う）
+        aff_url = i.get("affiliateUrl") or make_rakuten_affiliate_url_fallback(i.get("itemUrl"))
+
         items.append(
             {
                 "source": "rakuten",
                 "name": i.get("itemName"),
                 "price": i.get("itemPrice"),
-                "url": make_rakuten_affiliate_url(i.get("itemUrl")),
+                "url": aff_url,
                 "shop": i.get("shopName"),
                 "image": i["mediumImageUrls"][0]["imageUrl"] if i.get("mediumImageUrls") else None,
             }
@@ -104,13 +105,13 @@ def search_rakuten(keyword: str, hits: int = 10):
 
 
 # =====================
-# Yahoo：ValueCommerce成果リンク化（直URLでもアフィになる）
+# Yahoo：ValueCommerce成果リンク化
 # =====================
 def make_valuecommerce_affiliate_url(original_url: str) -> str:
     if not original_url:
         return original_url
     if not (VC_SID and VC_PID):
-        return original_url  # 未設定なら元URLのまま
+        return original_url
 
     encoded = quote(original_url, safe="")
     return (
@@ -118,18 +119,11 @@ def make_valuecommerce_affiliate_url(original_url: str) -> str:
         f"?sid={VC_SID}&pid={VC_PID}&vc_url={encoded}"
     )
 
-
 def search_yahoo(keyword: str, hits: int = 10):
-    """YahooショッピングAPIで商品検索（v3）＋VC成果リンク化"""
     url = "https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch"
+    params = {"appid": YAHOO_APP_ID, "query": keyword, "results": hits}
 
-    params = {
-        "appid": YAHOO_APP_ID,
-        "query": keyword,
-        "results": hits,
-    }
-
-    res = requests.get(url, params=params)
+    res = requests.get(url, params=params, timeout=20)
     data = res.json()
 
     items = []
@@ -138,7 +132,6 @@ def search_yahoo(keyword: str, hits: int = 10):
         if price is None:
             continue
 
-        name = hit.get("name")
         url_item = hit.get("url")
 
         image = None
@@ -152,9 +145,8 @@ def search_yahoo(keyword: str, hits: int = 10):
         items.append(
             {
                 "source": "yahoo",
-                "name": name,
+                "name": hit.get("name"),
                 "price": price,
-                # ★ここが今回の本丸：Yahooリンクを必ずVC成果リンクに包む
                 "url": make_valuecommerce_affiliate_url(url_item),
                 "shop": seller or "Yahoo!ショッピング",
                 "image": image,
@@ -162,28 +154,17 @@ def search_yahoo(keyword: str, hits: int = 10):
         )
     return items
 
-@app.get("/about", response_class=HTMLResponse)
-def about():
-    html_path = BASE_DIR / "templates" / "about.html"
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-
 
 @app.get("/search")
 def search_items(keyword: str, sources: str = "rakuten,yahoo"):
-    """
-    sources: "rakuten", "yahoo", "rakuten,yahoo"
-    """
     source_list = [s.strip() for s in sources.split(",")]
 
     all_items = []
-
     if "rakuten" in source_list:
         all_items += search_rakuten(keyword, hits=10)
-
     if "yahoo" in source_list:
         all_items += search_yahoo(keyword, hits=10)
 
-    # 最安値判定
     norm_prices = [normalize_price(i.get("price")) for i in all_items]
     min_price = min(norm_prices) if norm_prices else None
 
@@ -193,7 +174,6 @@ def search_items(keyword: str, sources: str = "rakuten,yahoo"):
             and normalize_price(item.get("price")) == min_price
         )
 
-    # 価格昇順
     all_items.sort(key=lambda x: normalize_price(x.get("price")))
 
     return {
@@ -202,4 +182,3 @@ def search_items(keyword: str, sources: str = "rakuten,yahoo"):
         "count": len(all_items),
         "items": all_items,
     }
-
